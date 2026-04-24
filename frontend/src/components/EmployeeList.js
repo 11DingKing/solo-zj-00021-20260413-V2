@@ -30,9 +30,49 @@ import {
   Switch,
   FormControlLabel,
   Avatar,
+  Chip as MuiChip,
 } from '@mui/material';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import EmailIcon from '@mui/icons-material/Email';
+
+const formatDate = date => {
+  if (!date) return '—';
+  return new Date(date).toLocaleDateString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+};
+
+const getStatusColor = status => {
+  switch (status) {
+    case 'ACTIVE':
+      return 'success';
+    case 'INACTIVE':
+      return 'default';
+    case 'ON_LEAVE':
+      return 'warning';
+    case 'TERMINATED':
+      return 'error';
+    default:
+      return 'default';
+  }
+};
+
+const getStatusLabel = status => {
+  switch (status) {
+    case 'ACTIVE':
+      return '在职';
+    case 'INACTIVE':
+      return '离职';
+    case 'ON_LEAVE':
+      return '休假';
+    case 'TERMINATED':
+      return '已终止';
+    default:
+      return status || '未知';
+  }
+};
 
 const EmployeeList = () => {
   const navigate = useNavigate();
@@ -49,7 +89,7 @@ const EmployeeList = () => {
   const [showSnackbar, setShowSnackbar] = useState(false);
   const [departments, setDepartments] = useState([]);
   const [departmentFilter, setDepartmentFilter] = useState('all');
-  const [ageFilter, setAgeFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [sortBy, setSortBy] = useState('name');
   const [denseRows, setDenseRows] = useState(false);
   const searchTimeoutRef = useRef(null);
@@ -167,7 +207,7 @@ const EmployeeList = () => {
 
   const handleResetFilters = () => {
     setDepartmentFilter('all');
-    setAgeFilter('all');
+    setStatusFilter('all');
     setSortBy('name');
     setSearchTerm('');
     setPage(0);
@@ -176,9 +216,10 @@ const EmployeeList = () => {
   const handleExportCsv = () => {
     const columns = [
       { label: 'Employee', accessor: emp => `${emp.firstName || ''} ${emp.lastName || ''}`.trim() },
-      { label: 'Email', accessor: emp => emp.email || '' },
       { label: 'Department', accessor: emp => emp.department?.name || 'Unassigned' },
-      { label: 'Age', accessor: emp => emp.age || '' },
+      { label: 'Position', accessor: emp => emp.position || '—' },
+      { label: 'Hire Date', accessor: emp => formatDate(emp.hireDate) },
+      { label: 'Status', accessor: emp => getStatusLabel(emp.status) },
     ];
     exportToCsv(employees, columns, 'employees');
   };
@@ -199,28 +240,27 @@ const EmployeeList = () => {
   const filteredEmployees = employees
     .filter(employee => {
       const matchesDepartment = departmentFilter === 'all' || String(employee.department?.id) === departmentFilter;
-      const matchesAge =
-        ageFilter === 'all' ||
-        (ageFilter === 'under30' && employee.age < 30) ||
-        (ageFilter === '30to45' && employee.age >= 30 && employee.age <= 45) ||
-        (ageFilter === '45plus' && employee.age > 45);
-      return matchesDepartment && matchesAge;
+      const matchesStatus = statusFilter === 'all' || employee.status === statusFilter;
+      return matchesDepartment && matchesStatus;
     })
     .sort((a, b) => {
-      if (sortBy === 'age') {
-        return (a.age || 0) - (b.age || 0);
+      if (sortBy === 'hireDate') {
+        return new Date(a.hireDate || 0) - new Date(b.hireDate || 0);
       }
       if (sortBy === 'department') {
         return (a.department?.name || 'Unassigned').localeCompare(b.department?.name || 'Unassigned');
+      }
+      if (sortBy === 'status') {
+        return (a.status || '').localeCompare(b.status || '');
       }
       const nameA = `${a.firstName} ${a.lastName}`;
       const nameB = `${b.firstName} ${b.lastName}`;
       return nameA.localeCompare(nameB);
     });
 
-  const averageAge = employees.length > 0 ? Math.round(employees.reduce((sum, emp) => sum + (emp.age || 0), 0) / employees.length) : 0;
   const visibleCount = filteredEmployees.length;
   const departmentsCount = departments.length;
+  const activeCount = employees.filter(e => e.status === 'ACTIVE').length;
 
   const getInitials = (first, last) => {
     const firstInitial = first?.[0] || '';
@@ -375,13 +415,13 @@ const EmployeeList = () => {
             }}
           >
             <Typography variant="body2" color="text.secondary">
-              Avg age
+              Active employees
             </Typography>
             <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: -0.5 }}>
-              {averageAge || '—'}
+              {activeCount}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              Across current roster
+              Currently active
             </Typography>
           </Paper>
         </Grid>
@@ -389,7 +429,7 @@ const EmployeeList = () => {
 
       <Paper sx={{ padding: 2, marginBottom: 2, boxShadow: 3, borderRadius: 2 }}>
         <Stack spacing={2}>
-          <TextField label="Search by name or email..." variant="outlined" value={searchTerm} onChange={handleSearchChange} fullWidth />
+          <TextField label="Search by name, email or position..." variant="outlined" value={searchTerm} onChange={handleSearchChange} fullWidth />
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
             <FormControl fullWidth>
               <InputLabel id="department-filter-label">Department</InputLabel>
@@ -411,20 +451,21 @@ const EmployeeList = () => {
               </Select>
             </FormControl>
             <FormControl fullWidth>
-              <InputLabel id="age-filter-label">Age</InputLabel>
+              <InputLabel id="status-filter-label">Status</InputLabel>
               <Select
-                labelId="age-filter-label"
-                value={ageFilter}
-                label="Age"
+                labelId="status-filter-label"
+                value={statusFilter}
+                label="Status"
                 onChange={e => {
-                  setAgeFilter(e.target.value);
+                  setStatusFilter(e.target.value);
                   setPage(0);
                 }}
               >
-                <MenuItem value="all">All ranges</MenuItem>
-                <MenuItem value="under30">Under 30</MenuItem>
-                <MenuItem value="30to45">30 to 45</MenuItem>
-                <MenuItem value="45plus">45+</MenuItem>
+                <MenuItem value="all">All status</MenuItem>
+                <MenuItem value="ACTIVE">在职</MenuItem>
+                <MenuItem value="INACTIVE">离职</MenuItem>
+                <MenuItem value="ON_LEAVE">休假</MenuItem>
+                <MenuItem value="TERMINATED">已终止</MenuItem>
               </Select>
             </FormControl>
             <FormControl fullWidth>
@@ -440,7 +481,8 @@ const EmployeeList = () => {
               >
                 <MenuItem value="name">Name</MenuItem>
                 <MenuItem value="department">Department</MenuItem>
-                <MenuItem value="age">Age</MenuItem>
+                <MenuItem value="hireDate">Hire Date</MenuItem>
+                <MenuItem value="status">Status</MenuItem>
               </Select>
             </FormControl>
           </Stack>
@@ -459,10 +501,10 @@ const EmployeeList = () => {
                 variant="outlined"
               />
             )}
-            {ageFilter !== 'all' && (
+            {statusFilter !== 'all' && (
               <Chip
-                label={`Age: ${ageFilter === 'under30' ? 'Under 30' : ageFilter === '30to45' ? '30-45' : '45+'}`}
-                onDelete={() => setAgeFilter('all')}
+                label={`Status: ${getStatusLabel(statusFilter)}`}
+                onDelete={() => setStatusFilter('all')}
                 color="primary"
                 variant="outlined"
               />
@@ -481,10 +523,10 @@ const EmployeeList = () => {
           <TableHead>
             <TableRow sx={{ backgroundColor: '#f5f7fb' }}>
               <TableCell sx={{ fontWeight: 700, letterSpacing: 0.2 }}>Employee</TableCell>
-              <TableCell sx={{ fontWeight: 700, letterSpacing: 0.2 }}>Email</TableCell>
               <TableCell sx={{ fontWeight: 700, letterSpacing: 0.2 }}>Department</TableCell>
-              <TableCell sx={{ fontWeight: 700, letterSpacing: 0.2 }}>Age</TableCell>
-              <TableCell sx={{ fontWeight: 700, letterSpacing: 0.2 }}>Contact</TableCell>
+              <TableCell sx={{ fontWeight: 700, letterSpacing: 0.2 }}>Position</TableCell>
+              <TableCell sx={{ fontWeight: 700, letterSpacing: 0.2 }}>Hire Date</TableCell>
+              <TableCell sx={{ fontWeight: 700, letterSpacing: 0.2 }}>Status</TableCell>
               <TableCell align="right" sx={{ fontWeight: 700, letterSpacing: 0.2 }}>
                 Actions
               </TableCell>
@@ -523,41 +565,21 @@ const EmployeeList = () => {
                           {employee.firstName} {employee.lastName}
                         </Typography>
                         <Typography variant="caption" color="text.secondary">
-                          {employee.department?.name || 'Unassigned'}
+                          {employee.email || '—'}
                         </Typography>
                       </Box>
                     </Stack>
                   </TableCell>
-                  <TableCell>{employee.email}</TableCell>
                   <TableCell>{employee.department?.name || 'Unassigned'}</TableCell>
-                  <TableCell>{employee.age}</TableCell>
+                  <TableCell>{employee.position || '—'}</TableCell>
+                  <TableCell>{formatDate(employee.hireDate)}</TableCell>
                   <TableCell>
-                    <Stack direction="row" spacing={1}>
-                      <Tooltip title="Email">
-                        <span>
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            onClick={() => handleMailTo(employee.email)}
-                            sx={{ minWidth: 36, borderColor: '#1E3C72', color: '#1E3C72', '&:hover': { backgroundColor: '#1E3C72', color: '#fff' } }}
-                          >
-                            <EmailIcon fontSize="small" />
-                          </Button>
-                        </span>
-                      </Tooltip>
-                      <Tooltip title="Copy email">
-                        <span>
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            onClick={() => handleCopyEmail(employee.email)}
-                            sx={{ minWidth: 36, borderColor: '#1E3C72', color: '#1E3C72', '&:hover': { backgroundColor: '#1E3C72', color: '#fff' } }}
-                          >
-                            <ContentCopyIcon fontSize="small" />
-                          </Button>
-                        </span>
-                      </Tooltip>
-                    </Stack>
+                    <MuiChip
+                      label={getStatusLabel(employee.status)}
+                      color={getStatusColor(employee.status)}
+                      size="small"
+                      variant="outlined"
+                    />
                   </TableCell>
                   <TableCell align="right">
                     <Stack direction="row" justifyContent="flex-end" spacing={1}>

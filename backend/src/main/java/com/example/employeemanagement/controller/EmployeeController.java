@@ -1,20 +1,29 @@
 package com.example.employeemanagement.controller;
 
+import com.example.employeemanagement.dto.EmployeeDetailDto;
+import com.example.employeemanagement.dto.EmployeeListDto;
 import com.example.employeemanagement.dto.EmployeeRequestDto;
-import com.example.employeemanagement.dto.EmployeeResponseDto;
 import com.example.employeemanagement.exception.ResourceNotFoundException;
 import com.example.employeemanagement.model.Department;
 import com.example.employeemanagement.model.Employee;
+import com.example.employeemanagement.model.Role;
+import com.example.employeemanagement.model.User;
+import com.example.employeemanagement.service.AuditLogService;
 import com.example.employeemanagement.service.DepartmentService;
 import com.example.employeemanagement.service.EmployeeService;
+import com.example.employeemanagement.util.MaskUtils;
+import com.example.employeemanagement.util.SecurityUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
+import javax.servlet.http.HttpServletRequest;
 import javax.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -33,27 +42,20 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** This class represents the REST API controller for employees. */
 @RestController
 @RequestMapping("/api/employees")
 @CrossOrigin(origins = "http://localhost:3000")
 @Tag(name = "Employees APIs", description = "API Operations related to managing employees")
 public class EmployeeController {
 
-  /** Service layer for employee business logic. */
   @Autowired private EmployeeService employeeService;
 
-  /** Service layer for department business logic, used to resolve department references. */
   @Autowired private DepartmentService departmentService;
 
-  /**
-   * Get all employees API with pagination and search.
-   *
-   * @param page Page number (0-based)
-   * @param size Number of items per page
-   * @param keyword Search keyword for firstName, lastName, email
-   * @return Paginated list of employees
-   */
+  @Autowired private AuditLogService auditLogService;
+
+  @Autowired private SecurityUtils securityUtils;
+
   @Operation(summary = "Get all employees with pagination", description = "Retrieve a paginated list of employees with optional search")
   @GetMapping
   public Map<String, Object> getAllEmployees(
@@ -64,8 +66,8 @@ public class EmployeeController {
     Pageable pageable = PageRequest.of(page, size, Sort.by("firstName").ascending());
     Page<Employee> employeePage = employeeService.getEmployeesWithPagination(keyword, pageable);
 
-    List<EmployeeResponseDto> content = employeePage.getContent().stream()
-        .map(this::convertToDto)
+    List<EmployeeListDto> content = employeePage.getContent().stream()
+        .map(this::convertToListDto)
         .collect(Collectors.toList());
 
     Map<String, Object> response = new HashMap<>();
@@ -78,12 +80,6 @@ public class EmployeeController {
     return response;
   }
 
-  /**
-   * Get employee by ID API.
-   *
-   * @param id ID of the employee to be retrieved
-   * @return Employee with the specified ID
-   */
   @Operation(
       summary = "Get employee by ID",
       description = "Retrieve a specific employee by their ID")
@@ -93,38 +89,37 @@ public class EmployeeController {
         @ApiResponse(responseCode = "404", description = "Employee not found")
       })
   @GetMapping("/{id}")
-  public ResponseEntity<EmployeeResponseDto> getEmployeeById(@PathVariable Long id) {
+  public ResponseEntity<EmployeeDetailDto> getEmployeeById(
+      @PathVariable Long id,
+      HttpServletRequest request) {
     Employee employee =
         employeeService
             .getEmployeeById(id)
             .orElseThrow(() -> new ResourceNotFoundException("Employee not found with id: " + id));
 
-    return ResponseEntity.ok(convertToDto(employee));
+    Optional<User> currentUser = securityUtils.getCurrentUser();
+    boolean isHr = currentUser.map(user -> Role.HR.equals(user.getRole())).orElse(false);
+
+    currentUser.ifPresent(user -> {
+      String ipAddress = getClientIpAddress(request);
+      String userAgent = request.getHeader("User-Agent");
+      auditLogService.logViewDetails(user, id, ipAddress, userAgent);
+    });
+
+    EmployeeDetailDto dto = convertToDetailDto(employee, isHr);
+    return ResponseEntity.ok(dto);
   }
 
-  /**
-   * Create a new employee API.
-   *
-   * @param request New employee details
-   * @return New employee record
-   */
   @Operation(summary = "Create a new employee", description = "Create a new employee record")
   @PostMapping
-  public ResponseEntity<EmployeeResponseDto> createEmployee(
+  public ResponseEntity<EmployeeDetailDto> createEmployee(
       @Valid @RequestBody EmployeeRequestDto request) {
     Employee employee = convertToEntity(request);
     Employee savedEmployee = employeeService.saveEmployee(employee);
     return ResponseEntity.status(org.springframework.http.HttpStatus.CREATED)
-        .body(convertToDto(savedEmployee));
+        .body(convertToDetailDto(savedEmployee, true));
   }
 
-  /**
-   * Update an existing employee API.
-   *
-   * @param id ID of the employee to be updated
-   * @param request Updated employee details
-   * @return Updated employee record
-   */
   @Operation(
       summary = "Update an existing employee",
       description = "Update an existing employee's details")
@@ -134,7 +129,7 @@ public class EmployeeController {
         @ApiResponse(responseCode = "404", description = "Employee not found")
       })
   @PutMapping("/{id}")
-  public ResponseEntity<EmployeeResponseDto> updateEmployee(
+  public ResponseEntity<EmployeeDetailDto> updateEmployee(
       @PathVariable Long id, @Valid @RequestBody EmployeeRequestDto request) {
     Employee employee =
         employeeService
@@ -156,15 +151,9 @@ public class EmployeeController {
     employee.setAge(request.getAge());
 
     Employee updatedEmployee = employeeService.saveEmployee(employee);
-    return ResponseEntity.ok(convertToDto(updatedEmployee));
+    return ResponseEntity.ok(convertToDetailDto(updatedEmployee, true));
   }
 
-  /**
-   * Delete an employee API.
-   *
-   * @param id ID of the employee to be deleted
-   * @return No content
-   */
   @Operation(summary = "Delete an employee", description = "Delete an employee record by ID")
   @ApiResponses(
       value = {
@@ -181,21 +170,18 @@ public class EmployeeController {
     return ResponseEntity.noContent().build();
   }
 
-  /**
-   * Converts an {@link Employee} entity to an {@link EmployeeResponseDto}.
-   *
-   * @param employee the employee entity to convert
-   * @return the corresponding response DTO, including a nested department DTO if present
-   */
-  private EmployeeResponseDto convertToDto(Employee employee) {
-    EmployeeResponseDto dto = new EmployeeResponseDto();
+  private EmployeeListDto convertToListDto(Employee employee) {
+    EmployeeListDto dto = new EmployeeListDto();
     dto.setId(employee.getId());
     dto.setFirstName(employee.getFirstName());
     dto.setLastName(employee.getLastName());
     dto.setEmail(employee.getEmail());
-    dto.setAge(employee.getAge());
+    dto.setPosition(employee.getPosition());
+    dto.setHireDate(employee.getHireDate());
+    dto.setStatus(employee.getStatus());
+
     if (employee.getDepartment() != null) {
-      EmployeeResponseDto.DepartmentDto deptDto = new EmployeeResponseDto.DepartmentDto();
+      EmployeeListDto.DepartmentDto deptDto = new EmployeeListDto.DepartmentDto();
       deptDto.setId(employee.getDepartment().getId());
       deptDto.setName(employee.getDepartment().getName());
       dto.setDepartment(deptDto);
@@ -203,15 +189,41 @@ public class EmployeeController {
     return dto;
   }
 
-  /**
-   * Converts an {@link EmployeeRequestDto} to an {@link Employee} entity, resolving the department
-   * reference.
-   *
-   * @param request the request DTO containing employee details
-   * @return the corresponding employee entity with its department association set
-   * @throws com.example.employeemanagement.exception.ResourceNotFoundException if the referenced
-   *     department does not exist
-   */
+  private EmployeeDetailDto convertToDetailDto(Employee employee, boolean isHr) {
+    EmployeeDetailDto dto = new EmployeeDetailDto();
+    dto.setId(employee.getId());
+    dto.setFirstName(employee.getFirstName());
+    dto.setLastName(employee.getLastName());
+    dto.setEmail(employee.getEmail());
+    dto.setAge(employee.getAge());
+    dto.setPosition(employee.getPosition());
+    dto.setHireDate(employee.getHireDate());
+    dto.setStatus(employee.getStatus());
+
+    if (isHr) {
+      dto.setIdCard(employee.getIdCard());
+      dto.setSalary(employee.getSalary());
+    } else {
+      dto.setIdCard(MaskUtils.maskIdCard(employee.getIdCard()));
+      dto.setSalary(maskSalary(employee.getSalary()));
+    }
+
+    if (employee.getDepartment() != null) {
+      EmployeeDetailDto.DepartmentDto deptDto = new EmployeeDetailDto.DepartmentDto();
+      deptDto.setId(employee.getDepartment().getId());
+      deptDto.setName(employee.getDepartment().getName());
+      dto.setDepartment(deptDto);
+    }
+    return dto;
+  }
+
+  private BigDecimal maskSalary(BigDecimal salary) {
+    if (salary == null) {
+      return null;
+    }
+    return BigDecimal.ZERO;
+  }
+
   private Employee convertToEntity(EmployeeRequestDto request) {
     Employee employee = new Employee();
     employee.setFirstName(request.getFirstName());
@@ -229,5 +241,28 @@ public class EmployeeController {
     employee.setDepartment(department);
 
     return employee;
+  }
+
+  private String getClientIpAddress(HttpServletRequest request) {
+    String ip = request.getHeader("X-Forwarded-For");
+    if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
+      ip = request.getHeader("Proxy-Client-IP");
+    }
+    if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
+      ip = request.getHeader("WL-Proxy-Client-IP");
+    }
+    if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
+      ip = request.getHeader("HTTP_CLIENT_IP");
+    }
+    if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
+      ip = request.getHeader("HTTP_X_FORWARDED_FOR");
+    }
+    if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
+      ip = request.getRemoteAddr();
+    }
+    if (ip != null && ip.contains(",")) {
+      ip = ip.split(",")[0].trim();
+    }
+    return ip;
   }
 }

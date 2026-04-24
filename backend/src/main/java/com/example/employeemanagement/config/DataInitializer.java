@@ -2,46 +2,55 @@ package com.example.employeemanagement.config;
 
 import com.example.employeemanagement.model.Department;
 import com.example.employeemanagement.model.Employee;
+import com.example.employeemanagement.model.EmployeeStatus;
 import com.example.employeemanagement.repository.DepartmentRepository;
 import com.example.employeemanagement.repository.EmployeeRepository;
 import com.github.javafaker.Faker;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Random;
+import java.util.concurrent.TimeUnit;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Configuration;
 
-/** This class initializes fake data for the application when it starts. */
 @Configuration
 public class DataInitializer implements CommandLineRunner {
 
-  /** The department repository. */
   @Autowired private DepartmentRepository departmentRepository;
 
-  /** The employee repository. */
   @Autowired private EmployeeRepository employeeRepository;
 
-  /** The Faker instance used to generate realistic-looking test data. */
   private final Faker faker = new Faker();
 
-  /** Random number generator for assigning random ages and departments to employees. */
   private final Random random = new Random();
 
-  /**
-   * This method is called when the application starts.
-   *
-   * @param args Command line arguments
-   */
+  private static final String[] POSITIONS = {
+    "Software Engineer",
+    "Senior Software Engineer",
+    "Tech Lead",
+    "Product Manager",
+    "QA Engineer",
+    "UX Designer",
+    "Data Analyst",
+    "HR Manager",
+    "Accountant",
+    "Marketing Specialist",
+    "Sales Representative",
+    "Office Manager"
+  };
+
   @Override
   public void run(String... args) {
-    // Only seed data if the database is empty
     if (departmentRepository.count() > 0) {
       System.out.println("Data already exists, skipping initialization.");
       return;
     }
 
-    // Create fake departments
     List<Department> departments = new ArrayList<>();
     for (int i = 1; i <= 50; i++) {
       Department department = new Department();
@@ -50,16 +59,23 @@ public class DataInitializer implements CommandLineRunner {
     }
     departmentRepository.saveAll(departments);
 
-    // Create fake employees with ages
     List<Employee> employees = new ArrayList<>();
     for (int i = 1; i <= 295; i++) {
       Employee employee = new Employee();
       employee.setFirstName(faker.name().firstName());
       employee.setLastName(faker.name().lastName());
       employee.setEmail(faker.internet().emailAddress());
-      employee.setAge(random.nextInt(40) + 20); // Assign a random age between 20 and 60
+      employee.setAge(random.nextInt(40) + 20);
+      employee.setIdCard(faker.idNumber().ssnValid());
+      employee.setSalary(BigDecimal.valueOf(faker.number().numberBetween(50000, 200000)));
+      employee.setPosition(POSITIONS[random.nextInt(POSITIONS.length)]);
 
-      // Assign a random department to each employee
+      Date hireDate = faker.date().past(365 * 10, TimeUnit.DAYS);
+      employee.setHireDate(hireDate.toInstant().atZone(ZoneId.systemDefault()).toLocalDate());
+
+      EmployeeStatus[] statuses = EmployeeStatus.values();
+      employee.setStatus(statuses[random.nextInt(3)]);
+
       employee.setDepartment(departments.get(random.nextInt(departments.size())));
       employees.add(employee);
     }

@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS users (
   id       BIGINT       NOT NULL AUTO_INCREMENT,
   username VARCHAR(255) NOT NULL,
   password VARCHAR(255) NOT NULL,
+  role     VARCHAR(20)  NOT NULL DEFAULT 'USER',
   PRIMARY KEY (id),
   CONSTRAINT uk_users_username UNIQUE (username)
 ) ENGINE=InnoDB
@@ -54,12 +55,41 @@ CREATE TABLE IF NOT EXISTS employees (
   last_name     VARCHAR(255) NOT NULL,
   email         VARCHAR(255) NOT NULL,
   age           INT          NOT NULL,
+  id_card       VARCHAR(50)  NOT NULL,
+  salary        DECIMAL(15,2),
+  position      VARCHAR(255),
+  hire_date     DATE,
+  status        VARCHAR(20)  DEFAULT 'ACTIVE',
   department_id BIGINT       NOT NULL,
   PRIMARY KEY (id),
   CONSTRAINT fk_employees_department
     FOREIGN KEY (department_id) REFERENCES departments (id)
     ON UPDATE CASCADE
     ON DELETE RESTRICT
+) ENGINE=InnoDB
+  DEFAULT CHARSET=utf8mb4
+  COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
+-- audit_logs
+-- ---------------------------------------------------------------------------
+-- Maps to: com.example.employeemanagement.model.AuditLog
+-- Used for: Recording audit trails for employee detail views
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id           BIGINT       NOT NULL AUTO_INCREMENT,
+  user_id      BIGINT       NOT NULL,
+  username     VARCHAR(255) NOT NULL,
+  employee_id  BIGINT       NOT NULL,
+  action       VARCHAR(50)  NOT NULL,
+  timestamp    DATETIME     NOT NULL,
+  ip_address   VARCHAR(50),
+  user_agent   VARCHAR(500),
+  details      VARCHAR(500),
+  PRIMARY KEY (id),
+  INDEX idx_audit_user_id (user_id),
+  INDEX idx_audit_employee_id (employee_id),
+  INDEX idx_audit_timestamp (timestamp)
 ) ENGINE=InnoDB
   DEFAULT CHARSET=utf8mb4
   COLLATE=utf8mb4_unicode_ci;
