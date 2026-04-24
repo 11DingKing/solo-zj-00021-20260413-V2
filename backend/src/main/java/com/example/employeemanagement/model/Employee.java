@@ -38,7 +38,6 @@ public class Employee {
   @Max(value = 65, message = "Age must be at most 65")
   private int age;
 
-  @NotBlank(message = "ID card is required")
   private String idCard;
 
   private BigDecimal salary;

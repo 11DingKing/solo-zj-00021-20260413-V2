@@ -4,8 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.example.employeemanagement.model.Department;
 import com.example.employeemanagement.model.Employee;
+import com.example.employeemanagement.model.EmployeeStatus;
 import com.example.employeemanagement.repository.DepartmentRepository;
 import com.example.employeemanagement.repository.EmployeeRepository;
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,15 +38,25 @@ public class UtilitiesTests {
     department = departmentRepository.save(department);
   }
 
+  private Employee createTestEmployee(String firstName, String lastName, Department dept) {
+    Employee employee = new Employee();
+    employee.setFirstName(firstName);
+    employee.setLastName(lastName);
+    employee.setEmail(firstName.toLowerCase() + "." + lastName.toLowerCase() + "@example.com");
+    employee.setDepartment(dept);
+    employee.setAge(25);
+    employee.setIdCard("123456789012345678");
+    employee.setSalary(new BigDecimal("50000"));
+    employee.setPosition("Software Engineer");
+    employee.setHireDate(LocalDate.now());
+    employee.setStatus(EmployeeStatus.ACTIVE);
+    return employee;
+  }
+
   /** Test the find all employees method. */
   @Test
   void shouldFindEmployeeById() {
-    Employee employee = new Employee();
-    employee.setFirstName("John");
-    employee.setLastName("Doe");
-    employee.setEmail("john.doe@example.com");
-    employee.setDepartment(department);
-    employee.setAge(25);
+    Employee employee = createTestEmployee("John", "Doe", department);
     employee = employeeRepository.save(employee);
 
     Optional<Employee> foundEmployee = employeeRepository.findById(employee.getId());
@@ -55,12 +68,7 @@ public class UtilitiesTests {
   /** Test the save employee method. */
   @Test
   void shouldSaveEmployee() {
-    Employee employee = new Employee();
-    employee.setFirstName("Jane");
-    employee.setLastName("Doe");
-    employee.setEmail("jane.doe@example.com");
-    employee.setDepartment(department);
-    employee.setAge(25);
+    Employee employee = createTestEmployee("Jane", "Doe", department);
 
     Employee savedEmployee = employeeRepository.save(employee);
 
@@ -71,12 +79,7 @@ public class UtilitiesTests {
   /** Test the update employee method. */
   @Test
   void shouldDeleteEmployee() {
-    Employee employee = new Employee();
-    employee.setFirstName("Jane");
-    employee.setLastName("Doe");
-    employee.setEmail("jane.doe@example.com");
-    employee.setDepartment(department);
-    employee.setAge(25);
+    Employee employee = createTestEmployee("Jane", "Doe", department);
 
     employee = employeeRepository.save(employee);
     employeeRepository.deleteById(employee.getId());
@@ -163,20 +166,10 @@ public class UtilitiesTests {
     department2.setName("Finance");
     department2 = departmentRepository.save(department2);
 
-    Employee employee1 = new Employee();
-    employee1.setFirstName("John");
-    employee1.setLastName("Doe");
-    employee1.setEmail("jane.doe@example.com");
-    employee1.setDepartment(department1);
-    employee1.setAge(25);
+    Employee employee1 = createTestEmployee("John", "Doe", department1);
     employeeRepository.save(employee1);
 
-    Employee employee2 = new Employee();
-    employee2.setFirstName("Jane");
-    employee2.setLastName("Doe");
-    employee2.setEmail("jane.doe2@example.com");
-    employee2.setDepartment(department2);
-    employee2.setAge(30);
+    Employee employee2 = createTestEmployee("Jane", "Doe", department2);
     employeeRepository.save(employee2);
 
     assertThat(employeeRepository.findById(employee1.getId()).get().getDepartment().getId())
@@ -196,12 +189,7 @@ public class UtilitiesTests {
     department2.setName("Finance");
     department2 = departmentRepository.save(department2);
 
-    Employee employee1 = new Employee();
-    employee1.setFirstName("John");
-    employee1.setLastName("Doe");
-    employee1.setEmail("jane.doe@example.com");
-    employee1.setDepartment(department1);
-    employee1.setAge(25);
+    Employee employee1 = createTestEmployee("John", "Doe", department1);
     employeeRepository.save(employee1);
 
     assertThat(employeeRepository.findById(employee1.getId()).get().getDepartment().getName())
